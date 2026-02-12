@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Task, COLUMNS, TaskStatus } from "@/types/kanban";
+import confetti from "canvas-confetti";
 import { useTasks, useMoveTask } from "@/hooks/useTasks";
 import { KanbanColumn } from "./KanbanColumn";
 import { TaskDialog } from "./TaskDialog";
@@ -57,6 +58,15 @@ export function KanbanBoard() {
     if (task) setActiveTask(task);
   };
 
+  const fireConfetti = useCallback(() => {
+    confetti({
+      particleCount: 80,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ["#2dd4bf", "#a78bfa", "#fbbf24", "#f87171", "#38bdf8"],
+    });
+  }, []);
+
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveTask(null);
     const { active, over } = event;
@@ -81,6 +91,10 @@ export function KanbanBoard() {
     const position = targetTasks.length;
 
     if (task.status !== targetStatus || task.position !== position) {
+      // Fire confetti when completing a task!
+      if (targetStatus === "done" && task.status !== "done") {
+        fireConfetti();
+      }
       moveTask.mutate({ id: taskId, status: targetStatus, position });
     }
   };

@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,6 +15,24 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
+    // Fetch tasks from DB to give AI context
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const { data: tasks } = await supabase
+      .from("tasks")
+      .select("title, description, status, priority, due_date, labels")
+      .order("position", { ascending: true });
+
+    const taskContext = tasks && tasks.length > 0
+      ? `\n\nHere are the user's current tasks on their board:\n${tasks.map((t, i) => 
+          `${i + 1}. "${t.title}" — Status: ${t.status}, Priority: ${t.priority}${t.description ? `, Description: ${t.description}` : ""}${t.due_date ? `, Due: ${t.due_date}` : ""}${t.labels?.length ? `, Labels: ${t.labels.join(", ")}` : ""}`
+        ).join("\n")}`
+      : "\n\nThe user currently has no tasks on their board.";
+
+    const systemPrompt = `You are FlowBoard AI, a helpful assistant integrated into a Kanban board app called FlowBoard. You have full access to the user's task board and can see all their tasks. You help users with productivity tips, task planning, project management advice, and answer questions about their tasks. Keep responses concise, friendly, and actionable. Use markdown formatting when helpful.${taskContext}`;
+
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -23,11 +42,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: "google/gemini-3-flash-preview",
         messages: [
-          {
-            role: "system",
-            content:
-              "You are FlowBoard AI, a helpful assistant integrated into a Kanban board app. You help users with productivity tips, task planning, project management advice, and general questions. Keep responses concise, friendly, and actionable. Use markdown formatting when helpful.",
-          },
+          { role: "system", content: systemPrompt },
           ...messages,
         ],
         stream: true,
@@ -37,21 +52,18 @@ serve(async (req) => {
     if (!response.ok) {
       if (response.status === 429) {
         return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       if (response.status === 402) {
         return new Response(JSON.stringify({ error: "Payment required" }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       const t = await response.text();
       console.error("AI gateway error:", response.status, t);
       return new Response(JSON.stringify({ error: "AI gateway error" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
