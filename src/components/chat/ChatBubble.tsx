@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { MessageCircle, X, Send, Bot, User } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 
 type Message = { role: "user" | "assistant"; content: string };
@@ -13,6 +14,7 @@ export function ChatBubble() {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -97,6 +99,13 @@ export function ChatBubble() {
 
           try {
             const parsed = JSON.parse(jsonStr);
+
+            // Check for tasks_changed event from tool calls
+            if (parsed.tasks_changed) {
+              queryClient.invalidateQueries({ queryKey: ["tasks"] });
+              continue;
+            }
+
             const content = parsed.choices?.[0]?.delta?.content as string | undefined;
             if (content) upsertAssistant(content);
           } catch {
@@ -152,7 +161,7 @@ export function ChatBubble() {
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground/60 text-center text-sm">
                 <Bot className="h-10 w-10 mb-3 opacity-40" />
                 <p className="font-display font-medium">How can I help?</p>
-                <p className="text-xs mt-1">Ask me about productivity, planning, or anything else.</p>
+                <p className="text-xs mt-1">Ask me to create tasks, update your board, or get productivity tips.</p>
               </div>
             )}
             {messages.map((msg, i) => (
